@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bartending Shift Manager</title>
+    
+    <!-- Include CSS -->
+    <?!= include('styles'); ?>
+</head>
+<body>
+    <div id="app">
+        <!-- Loading Screen -->
+        <div id="loadingScreen" class="loading-screen">
+            <div class="loading-spinner"></div>
+            <p>Loading Shift Manager...</p>
+        </div>
+        
+        <!-- Main Navigation -->
+        <nav class="main-nav" id="mainNav">
+            <div class="nav-header">
+                <h1>Shift Manager</h1>
+                <button class="nav-toggle" id="navToggle">☰</button>
+            </div>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="#" data-page="dashboard" class="nav-link active">Dashboard</a></li>
+                <li><a href="#" data-page="quick-entry" class="nav-link">Quick Entry</a></li>
+                <li><a href="#" data-page="analytics" class="nav-link">Analytics</a></li>
+                <li><a href="#" data-page="settings" class="nav-link">Settings</a></li>
+            </ul>
+        </nav>
+        
+        <!-- Main Content Area -->
+        <main class="main-content" id="mainContent">
+            <!-- Dashboard Page -->
+            <div id="dashboard" class="page active">
+                <div class="page-header">
+                    <h2>Dashboard</h2>
+                    <button class="btn btn-primary" id="newShiftBtn">New Shift</button>
+                </div>
+                
+                <div class="dashboard-grid" id="dashboardGrid">
+                    <!-- Dashboard cards will be populated here -->
+                </div>
+                
+                <div class="recent-shifts">
+                    <h3>Recent Shifts</h3>
+                    <div class="shifts-list" id="recentShiftsList">
+                        <!-- Recent shifts will be populated here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Entry Page -->
+            <div id="quick-entry" class="page">
+                <div class="page-header">
+                    <h2>Quick Shift Entry</h2>
+                    <div class="mode-toggle">
+                        <button class="toggle-btn active" data-mode="quick">Quick</button>
+                        <button class="toggle-btn" data-mode="detailed">Detailed</button>
+                    </div>
+                </div>
+                
+                <form id="quickEntryForm" class="quick-entry-form">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="shift_date">Date</label>
+                            <input type="date" id="shift_date" name="shift_date" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="start_time">Start Time</label>
+                            <input type="time" id="start_time" name="start_time" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="end_time">End Time</label>
+                            <input type="time" id="end_time" name="end_time" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="total_tips">Total Tips ($)</label>
+                            <input type="number" id="total_tips" name="total_tips" step="0.01" min="0" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="location">Location</label>
+                            <select id="location" name="location" required>
+                                <option value="">Select Location</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="shift_mood">Shift Mood</label>
+                            <div class="rating-input" id="shift_mood">
+                                <span class="star" data-rating="1">★</span>
+                                <span class="star" data-rating="2">★</span>
+                                <span class="star" data-rating="3">★</span>
+                                <span class="star" data-rating="4">★</span>
+                                <span class="star" data-rating="5">★</span>
+                            </div>
+                            <input type="hidden" name="shift_mood" id="shift_mood_value" value="3">
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="saveAndContinue">Save & Add Details</button>
+                        <button type="submit" class="btn btn-primary">Save & Finish</button>
+                    </div>
+                </form>
+                
+                <div class="smart-suggestions" id="smartSuggestions">
+                    <!-- Smart suggestions will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Analytics Page -->
+            <div id="analytics" class="page">
+                <div class="page-header">
+                    <h2>Analytics</h2>
+                    <div class="analytics-filters">
+                        <select id="analyticsTimeframe">
+                            <option value="30">Last 30 Days</option>
+                            <option value="90">Last 3 Months</option>
+                            <option value="365">Last Year</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="analytics-grid" id="analyticsGrid">
+                    <!-- Analytics cards will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Settings Page -->
+            <div id="settings" class="page">
+                <div class="page-header">
+                    <h2>Settings</h2>
+                </div>
+                
+                <div class="settings-sections">
+                    <div class="settings-section">
+                        <h3>Locations</h3>
+                        <div class="settings-content" id="locationsSettings">
+                            <!-- Location management will be here -->
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Coworkers</h3>
+                        <div class="settings-content" id="coworkersSettings">
+                            <!-- Coworker management will be here -->
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h3>Backup & Export</h3>
+                        <div class="settings-content">
+                            <button class="btn btn-secondary" id="exportDataBtn">Export Data</button>
+                            <button class="btn btn-secondary" id="backupDataBtn">Create Backup</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Modal Container -->
+        <div id="modalContainer" class="modal-container">
+            <!-- Modals will be dynamically inserted here -->
+        </div>
+        
+        <!-- Toast Notifications -->
+        <div id="toastContainer" class="toast-container">
+            <!-- Toast notifications will appear here -->
+        </div>
+    </div>
+    
+    <!-- Include JavaScript -->
+    <?!= include('scripts'); ?>
+</body>
+</html>
