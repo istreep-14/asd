@@ -1,56 +1,35 @@
 // Main Google Apps Script file - Code.gs
-// Bartending Shift Entry Web App
 
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'; // Replace with your Google Sheets ID
-
-// Initialize sheets and create if they don't exist
-function initializeSheets() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheetNames = [
-    'Shifts', 'Tip_Details', 'Shift_Coworkers', 'Parties', 
-    'Chump_Log', 'Bets', 'Tip_Adjustments', 'Personal_Log',
-    'Coworkers', 'Locations', 'Positions', 'Events', 'Tip_Calc'
-  ];
-  
-  sheetNames.forEach(name => {
-    if (!ss.getSheetByName(name)) {
-      ss.insertSheet(name);
-      setupSheetHeaders(name);
-    }
-  });
-}
-
-function setupSheetHeaders(sheetName) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(sheetName);
-  
-  const headers = {
-    'Shifts': ['shift_id', 'shift_date', 'start_time', 'end_time', 'total_tips', 'location_id', 'notes', 'weather', 'shift_mood', 'total_hours', 'shift_type'],
-    'Tip_Details': ['tip_detail_id', 'shift_id', 'total_cash_tips', 'total_cc_tips', 'total_tips_manual', 'day_cut', 'mid_cut', 'night_cut', 'calculated_tips', 'hourly_tips'],
-    'Shift_Coworkers': ['id', 'shift_id', 'coworker_id', 'position', 'start_time', 'end_time', 'location_id', 'rating', 'notes'],
-    'Parties': ['party_id', 'shift_id', 'party_name', 'start_time', 'end_time', 'people_count', 'party_tip', 'duration'],
-    'Chump_Log': ['chump_id', 'shift_id', 'opponent_name', 'cash_added', 'flip_result', 'winner'],
-    'Bets': ['bet_id', 'shift_id', 'bet_type', 'description', 'amount', 'opponent', 'outcome', 'profit_loss'],
-    'Tip_Adjustments': ['adjustment_id', 'shift_id', 'adjustment_type', 'amount', 'reason', 'timestamp'],
-    'Personal_Log': ['log_id', 'shift_id', 'log_type', 'description', 'timestamp'],
-    'Coworkers': ['coworker_id', 'name', 'position', 'contact', 'hire_date', 'active'],
-    'Locations': ['location_id', 'name', 'address', 'active'],
-    'Positions': ['position_id', 'title', 'description'],
-    'Events': ['event_id', 'name', 'date', 'description'],
-    'Tip_Calc': ['calc_id', 'shift_id', 'bartender_name', 'hours', 'excluded', 'hourly_rate', 'share']
-  };
-  
-  if (headers[sheetName]) {
-    sheet.getRange(1, 1, 1, headers[sheetName].length).setValues([headers[sheetName]]);
+// Configuration
+const CONFIG = {
+  SPREADSHEET_ID: 'your_spreadsheet_id_here',
+  SHEETS: {
+    SHIFTS: 'Shifts',
+    TIP_DETAILS: 'Tip_Details',
+    SHIFT_COWORKERS: 'Shift_Coworkers',
+    PARTIES: 'Parties',
+    CHUMP_LOG: 'Chump_Log',
+    BETS: 'Bets',
+    TIP_ADJUSTMENTS: 'Tip_Adjustments',
+    PERSONAL_LOG: 'Personal_Log',
+    COWORKERS: 'Coworkers',
+    LOCATIONS: 'Locations',
+    POSITIONS: 'Positions',
+    EVENTS: 'Events',
+    TIP_CALC: 'Tip_Calc'
   }
-}
+};
 
-// Web app entry point
-function doGet() {
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
+// Initialize web app
+function doGet(e) {
+  const page = e.parameter.page || 'main';
+  const template = HtmlService.createTemplateFromFile('index');
+  template.page = page;
+  
+  return template.evaluate()
+    .setTitle('Bartending Shift Manager')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .setTitle('Bartending Shift Tracker');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 // Include HTML files
@@ -58,248 +37,451 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-// Data retrieval functions
-function getShiftData(shiftId = null) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Shifts');
-  const data = sheet.getDataRange().getValues();
-  
-  if (shiftId) {
-    return data.find(row => row[0] === shiftId);
+// Database Manager Class
+class DatabaseManager {
+  constructor() {
+    this.spreadsheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    this.cache = CacheService.getScriptCache();
   }
-  return data.slice(1); // Return all except header
+  
+  getSheet(sheetName) {
+    return this.spreadsheet.getSheetByName(sheetName);
+  }
+  
+  // Generic data retrieval
+  getData(sheetName, range = null) {
+    const cacheKey = `${sheetName}_${range || 'all'}`;
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached) {
+      return JSON.parse(cached);
+    }
+    
+    const sheet = this.getSheet(sheetName);
+    const data = range ? sheet.getRange(range).getValues() : sheet.getDataRange().getValues();
+    
+    // Cache for 10 minutes
+    this.cache.put(cacheKey, JSON.stringify(data), 600);
+    return data;
+  }
+  
+  // Generic data insertion
+  insertData(sheetName, data) {
+    const sheet = this.getSheet(sheetName);
+    const lastRow = sheet.getLastRow();
+    
+    // Generate ID if not provided
+    if (!data.id) {
+      data.id = this.generateId();
+    }
+    
+    const values = Object.values(data);
+    sheet.getRange(lastRow + 1, 1, 1, values.length).setValues([values]);
+    
+    // Clear related cache
+    this.clearCache(sheetName);
+    return data.id;
+  }
+  
+  // Update existing data
+  updateData(sheetName, id, data) {
+    const sheet = this.getSheet(sheetName);
+    const allData = sheet.getDataRange().getValues();
+    const headers = allData[0];
+    const idIndex = headers.indexOf('id');
+    
+    for (let i = 1; i < allData.length; i++) {
+      if (allData[i][idIndex] === id) {
+        const updatedRow = headers.map(header => data[header] || allData[i][headers.indexOf(header)]);
+        sheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
+        break;
+      }
+    }
+    
+    this.clearCache(sheetName);
+    return true;
+  }
+  
+  generateId() {
+    return 'ID_' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+  
+  clearCache(pattern = null) {
+    // Clear specific cache or all cache
+    if (pattern) {
+      // Google Apps Script doesn't support pattern-based cache clearing
+      // So we'll implement a simple version tracking system
+      const version = (parseInt(this.cache.get('cache_version') || '0') + 1).toString();
+      this.cache.put('cache_version', version);
+    }
+  }
+}
+
+// Initialize database manager
+const db = new DatabaseManager();
+
+// API Functions for client-side calls
+
+// Shift Management
+function saveShift(shiftData) {
+  try {
+    // Validate data
+    const validation = validateShiftData(shiftData);
+    if (!validation.valid) {
+      return { success: false, errors: validation.errors };
+    }
+    
+    // Calculate derived fields
+    shiftData.total_hours = calculateShiftHours(shiftData.start_time, shiftData.end_time);
+    shiftData.shift_type = determineShiftType(shiftData.start_time, shiftData.end_time);
+    shiftData.hourly_rate = shiftData.total_tips / shiftData.total_hours;
+    shiftData.created_date = new Date();
+    
+    const shiftId = db.insertData(CONFIG.SHEETS.SHIFTS, shiftData);
+    
+    return { success: true, shift_id: shiftId };
+  } catch (error) {
+    console.error('Error saving shift:', error);
+    return { success: false, error: error.toString() };
+  }
+}
+
+function updateShift(shiftId, shiftData) {
+  try {
+    shiftData.total_hours = calculateShiftHours(shiftData.start_time, shiftData.end_time);
+    shiftData.shift_type = determineShiftType(shiftData.start_time, shiftData.end_time);
+    shiftData.hourly_rate = shiftData.total_tips / shiftData.total_hours;
+    shiftData.updated_date = new Date();
+    
+    db.updateData(CONFIG.SHEETS.SHIFTS, shiftId, shiftData);
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function getShifts(limit = 50, offset = 0) {
+  try {
+    const data = db.getData(CONFIG.SHEETS.SHIFTS);
+    const headers = data[0];
+    const rows = data.slice(1 + offset, 1 + offset + limit);
+    
+    const shifts = rows.map(row => {
+      const shift = {};
+      headers.forEach((header, index) => {
+        shift[header] = row[index];
+      });
+      return shift;
+    });
+    
+    return { success: true, data: shifts };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Coworker Management
+function saveCoworker(coworkerData) {
+  try {
+    const coworkerId = db.insertData(CONFIG.SHEETS.COWORKERS, coworkerData);
+    return { success: true, coworker_id: coworkerId };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
 }
 
 function getCoworkers() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Coworkers');
-  const data = sheet.getDataRange().getValues();
-  return data.slice(1).filter(row => row[5]); // Only active coworkers
-}
-
-function getLocations() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Locations');
-  const data = sheet.getDataRange().getValues();
-  return data.slice(1).filter(row => row[3]); // Only active locations
-}
-
-function getPositions() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName('Positions');
-  const data = sheet.getDataRange().getValues();
-  return data.slice(1);
-}
-
-// Save shift data
-function saveShiftData(shiftData) {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('Shifts');
+    const data = db.getData(CONFIG.SHEETS.COWORKERS);
+    const headers = data[0];
+    const coworkers = data.slice(1).map(row => {
+      const coworker = {};
+      headers.forEach((header, index) => {
+        coworker[header] = row[index];
+      });
+      return coworker;
+    });
     
-    // Generate new shift ID if not provided
-    if (!shiftData.shift_id) {
-      const lastRow = sheet.getLastRow();
-      shiftData.shift_id = 'SHIFT_' + (lastRow + 1);
-    }
-    
-    // Calculate total hours
-    if (shiftData.start_time && shiftData.end_time) {
-      shiftData.total_hours = calculateShiftHours(shiftData.start_time, shiftData.end_time);
-      shiftData.shift_type = determineShiftType(shiftData.start_time, shiftData.end_time);
-    }
-    
-    const values = [
-      shiftData.shift_id,
-      shiftData.shift_date || new Date(),
-      shiftData.start_time || '',
-      shiftData.end_time || '',
-      shiftData.total_tips || 0,
-      shiftData.location_id || '',
-      shiftData.notes || '',
-      shiftData.weather || '',
-      shiftData.shift_mood || '',
-      shiftData.total_hours || 0,
-      shiftData.shift_type || ''
-    ];
-    
-    sheet.appendRow(values);
-    return { success: true, shift_id: shiftData.shift_id };
+    return { success: true, data: coworkers };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
 }
 
-// Save tip details
-function saveTipDetails(tipData) {
+// Shift Coworkers
+function saveShiftCoworkers(shiftId, coworkers) {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('Tip_Details');
+    coworkers.forEach(coworker => {
+      const shiftCoworkerData = {
+        shift_id: shiftId,
+        coworker_id: coworker.coworker_id,
+        coworker_name: coworker.name,
+        position: coworker.position,
+        start_time: coworker.start_time,
+        end_time: coworker.end_time,
+        location: coworker.location,
+        rating: coworker.rating,
+        notes: coworker.notes
+      };
+      
+      db.insertData(CONFIG.SHEETS.SHIFT_COWORKERS, shiftCoworkerData);
+    });
     
-    const values = [
-      'TIP_' + Date.now(),
-      tipData.shift_id,
-      tipData.total_cash_tips || 0,
-      tipData.total_cc_tips || 0,
-      tipData.total_tips_manual || 0,
-      tipData.day_cut || 0,
-      tipData.mid_cut || 0,
-      tipData.night_cut || 0,
-      tipData.calculated_tips || 0,
-      tipData.hourly_tips || 0
-    ];
-    
-    sheet.appendRow(values);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
 }
 
-// Save coworker data
-function saveCoworkerShift(coworkerData) {
+// Party Management
+function saveParty(shiftId, partyData) {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('Shift_Coworkers');
+    partyData.shift_id = shiftId;
+    partyData.party_duration = calculatePartyDuration(partyData.start_time, partyData.end_time);
     
-    const values = [
-      'COWORKER_' + Date.now(),
-      coworkerData.shift_id,
-      coworkerData.coworker_id,
-      coworkerData.position || '',
-      coworkerData.start_time || '',
-      coworkerData.end_time || '',
-      coworkerData.location_id || '',
-      coworkerData.rating || 0,
-      coworkerData.notes || ''
-    ];
-    
-    sheet.appendRow(values);
-    return { success: true };
+    const partyId = db.insertData(CONFIG.SHEETS.PARTIES, partyData);
+    return { success: true, party_id: partyId };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
 }
 
-// Save party data
-function savePartyData(partyData) {
+// Tip Details
+function saveTipDetails(shiftId, tipData) {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('Parties');
+    tipData.shift_id = shiftId;
+    tipData.calculated_tips = (tipData.total_cash_tips || 0) + (tipData.total_cc_tips || 0);
     
-    const values = [
-      'PARTY_' + Date.now(),
-      partyData.shift_id,
-      partyData.party_name || '',
-      partyData.start_time || '',
-      partyData.end_time || '',
-      partyData.people_count || 0,
-      partyData.party_tip || 0,
-      partyData.duration || 0
-    ];
-    
-    sheet.appendRow(values);
-    return { success: true };
+    const tipId = db.insertData(CONFIG.SHEETS.TIP_DETAILS, tipData);
+    return { success: true, tip_id: tipId };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
 }
 
-// Save bet data
-function saveBetData(betData) {
+// Bets Management
+function saveBet(shiftId, betData) {
   try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName('Bets');
+    betData.shift_id = shiftId;
+    betData.profit_loss = calculateBetProfitLoss(betData);
     
-    const values = [
-      'BET_' + Date.now(),
-      betData.shift_id,
-      betData.bet_type || '',
-      betData.description || '',
-      betData.amount || 0,
-      betData.opponent || '',
-      betData.outcome || '',
-      betData.profit_loss || 0
-    ];
-    
-    sheet.appendRow(values);
-    return { success: true };
+    const betId = db.insertData(CONFIG.SHEETS.BETS, betData);
+    return { success: true, bet_id: betId };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
 }
 
-// Helper functions
+// Chump Change Management
+function saveChumpChange(shiftId, chumpData) {
+  try {
+    chumpData.shift_id = shiftId;
+    
+    const chumpId = db.insertData(CONFIG.SHEETS.CHUMP_LOG, chumpData);
+    return { success: true, chump_id: chumpId };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Analytics Functions
+function getSeasonalAnalytics() {
+  try {
+    const shifts = db.getData(CONFIG.SHEETS.SHIFTS);
+    const analytics = analyzeSeasonalPatterns(shifts);
+    return { success: true, data: analytics };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function getCoworkerAnalytics() {
+  try {
+    const shifts = db.getData(CONFIG.SHEETS.SHIFTS);
+    const shiftCoworkers = db.getData(CONFIG.SHEETS.SHIFT_COWORKERS);
+    const analytics = analyzeCoworkerImpact(shifts, shiftCoworkers);
+    return { success: true, data: analytics };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Utility Functions
 function calculateShiftHours(startTime, endTime) {
-  try {
-    const start = new Date('2024-01-01 ' + startTime);
-    let end = new Date('2024-01-01 ' + endTime);
-    
-    // Handle overnight shifts
-    if (end < start) {
-      end = new Date('2024-01-02 ' + endTime);
-    }
-    
-    const diffMs = end - start;
-    return Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100; // Round to 2 decimals
-  } catch (error) {
-    return 0;
+  const start = new Date(`1970-01-01 ${startTime}`);
+  const end = new Date(`1970-01-01 ${endTime}`);
+  
+  // Handle overnight shifts
+  if (end < start) {
+    end.setDate(end.getDate() + 1);
   }
+  
+  return (end - start) / (1000 * 60 * 60); // Convert to hours
 }
 
 function determineShiftType(startTime, endTime) {
-  try {
-    const startHour = parseInt(startTime.split(':')[0]);
-    const endHour = parseInt(endTime.split(':')[0]);
-    
-    if (startHour >= 6 && endHour <= 17) return 'Day';
-    if (startHour >= 17 || endHour <= 6) return 'Night';
-    return 'Day/Night';
-  } catch (error) {
-    return 'Unknown';
+  const startHour = parseInt(startTime.split(':')[0]);
+  const endHour = parseInt(endTime.split(':')[0]);
+  
+  if (startHour >= 6 && endHour <= 14) return 'Day';
+  if (startHour >= 14 && endHour <= 22) return 'Evening';
+  if (startHour >= 22 || endHour <= 6) return 'Night';
+  return 'Mixed';
+}
+
+function calculatePartyDuration(startTime, endTime) {
+  const start = new Date(`1970-01-01 ${startTime}`);
+  const end = new Date(`1970-01-01 ${endTime}`);
+  
+  if (end < start) {
+    end.setDate(end.getDate() + 1);
+  }
+  
+  return (end - start) / (1000 * 60 * 60);
+}
+
+function calculateBetProfitLoss(betData) {
+  const amount = parseFloat(betData.bet_amount) || 0;
+  const odds = parseFloat(betData.odds) || 1;
+  const won = betData.result === 'won';
+  
+  if (won) {
+    return amount * odds - amount;
+  } else {
+    return -amount;
   }
 }
 
-// Get data for specific pages
-function getPageData(page, shiftId) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sheet;
+function validateShiftData(data) {
+  const errors = [];
   
-  switch(page) {
-    case 'tips':
-      sheet = ss.getSheetByName('Tip_Details');
-      break;
-    case 'coworkers':
-      sheet = ss.getSheetByName('Shift_Coworkers');
-      break;
-    case 'parties':
-      sheet = ss.getSheetByName('Parties');
-      break;
-    case 'bets':
-      sheet = ss.getSheetByName('Bets');
-      break;
-    default:
-      return [];
-  }
+  if (!data.shift_date) errors.push('Shift date is required');
+  if (!data.start_time) errors.push('Start time is required');
+  if (!data.end_time) errors.push('End time is required');
+  if (!data.total_tips || data.total_tips < 0) errors.push('Valid total tips amount is required');
+  if (!data.location) errors.push('Location is required');
   
-  const data = sheet.getDataRange().getValues();
-  return data.slice(1).filter(row => row[1] === shiftId); // Filter by shift_id
+  return {
+    valid: errors.length === 0,
+    errors: errors
+  };
 }
 
-// Delete record
-function deleteRecord(tableName, recordId) {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(tableName);
-    const data = sheet.getDataRange().getValues();
+// Analytics Helper Functions
+function analyzeSeasonalPatterns(shifts) {
+  const monthlyData = {};
+  const dayOfWeekData = {};
+  
+  shifts.slice(1).forEach(shift => {
+    const date = new Date(shift[0]); // Assuming first column is shift_date
+    const month = date.getMonth();
+    const dayOfWeek = date.getDay();
+    const tips = parseFloat(shift[3]) || 0; // Assuming 4th column is total_tips
     
-    const rowIndex = data.findIndex(row => row[0] === recordId);
-    if (rowIndex > 0) { // Don't delete header row
-      sheet.deleteRow(rowIndex + 1);
-      return { success: true };
+    // Monthly analysis
+    if (!monthlyData[month]) {
+      monthlyData[month] = { total: 0, count: 0, tips: [] };
     }
-    return { success: false, error: 'Record not found' };
-  } catch (error) {
-    return { success: false, error: error.toString() };
+    monthlyData[month].total += tips;
+    monthlyData[month].count++;
+    monthlyData[month].tips.push(tips);
+    
+    // Day of week analysis
+    if (!dayOfWeekData[dayOfWeek]) {
+      dayOfWeekData[dayOfWeek] = { total: 0, count: 0, tips: [] };
+    }
+    dayOfWeekData[dayOfWeek].total += tips;
+    dayOfWeekData[dayOfWeek].count++;
+    dayOfWeekData[dayOfWeek].tips.push(tips);
+  });
+  
+  // Calculate averages
+  const monthlyAverages = Object.keys(monthlyData).map(month => ({
+    month: parseInt(month),
+    average: monthlyData[month].total / monthlyData[month].count,
+    count: monthlyData[month].count
+  }));
+  
+  const dayAverages = Object.keys(dayOfWeekData).map(day => ({
+    day: parseInt(day),
+    average: dayOfWeekData[day].total / dayOfWeekData[day].count,
+    count: dayOfWeekData[day].count
+  }));
+  
+  return {
+    monthly: monthlyAverages,
+    daily: dayAverages,
+    best_month: monthlyAverages.reduce((prev, current) => prev.average > current.average ? prev : current),
+    best_day: dayAverages.reduce((prev, current) => prev.average > current.average ? prev : current)
+  };
+}
+
+function analyzeCoworkerImpact(shifts, shiftCoworkers) {
+  // Implementation for coworker impact analysis
+  const coworkerImpact = {};
+  
+  // This would involve complex analysis of shifts with different coworker combinations
+  // For brevity, returning a simplified structure
+  
+  return {
+    top_performers: [],
+    team_compositions: [],
+    individual_ratings: {}
+  };
+}
+
+// Setup and initialization functions
+function onInstall() {
+  createTriggers();
+  initializeSheets();
+}
+
+function createTriggers() {
+  // Create time-based triggers for analytics and backups
+  ScriptApp.newTrigger('runDailyAnalytics')
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)
+    .create();
+}
+
+function initializeSheets() {
+  // Create sheets if they don't exist
+  const spreadsheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  
+  Object.values(CONFIG.SHEETS).forEach(sheetName => {
+    if (!spreadsheet.getSheetByName(sheetName)) {
+      const sheet = spreadsheet.insertSheet(sheetName);
+      initializeSheetHeaders(sheet, sheetName);
+    }
+  });
+}
+
+function initializeSheetHeaders(sheet, sheetName) {
+  const headers = getSheetHeaders(sheetName);
+  if (headers.length > 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   }
+}
+
+function getSheetHeaders(sheetName) {
+  const headerMap = {
+    [CONFIG.SHEETS.SHIFTS]: ['id', 'shift_date', 'start_time', 'end_time', 'total_tips', 'location', 'notes', 'weather', 'shift_mood', 'total_hours', 'shift_type', 'hourly_rate', 'created_date', 'updated_date'],
+    [CONFIG.SHEETS.TIP_DETAILS]: ['id', 'shift_id', 'total_cash_tips', 'total_cc_tips', 'calculated_tips', 'total_tips_manual', 'day_cut', 'mid_cut', 'night_cut', 'hourly_tips'],
+    [CONFIG.SHEETS.SHIFT_COWORKERS]: ['id', 'shift_id', 'coworker_id', 'coworker_name', 'position', 'start_time', 'end_time', 'location', 'rating', 'notes'],
+    [CONFIG.SHEETS.PARTIES]: ['id', 'shift_id', 'party_type', 'total_people', 'total_party_tip', 'start_time', 'end_time', 'party_duration', 'notes'],
+    [CONFIG.SHEETS.CHUMP_LOG]: ['id', 'shift_id', 'chump_amount_total', 'chump_winner', 'participants', 'notes'],
+    [CONFIG.SHEETS.BETS]: ['id', 'shift_id', 'bet_type', 'bet_amount', 'odds', 'opponent', 'result', 'profit_loss', 'notes'],
+    [CONFIG.SHEETS.TIP_ADJUSTMENTS]: ['id', 'shift_id', 'adjustment_type', 'amount', 'reason', 'notes'],
+    [CONFIG.SHEETS.PERSONAL_LOG]: ['id', 'shift_id', 'log_type', 'entry', 'timestamp'],
+    [CONFIG.SHEETS.COWORKERS]: ['id', 'coworker_name', 'position', 'phone', 'email', 'hire_date', 'notes'],
+    [CONFIG.SHEETS.LOCATIONS]: ['id', 'location_name', 'address', 'type', 'notes'],
+    [CONFIG.SHEETS.POSITIONS]: ['id', 'position_name', 'description'],
+    [CONFIG.SHEETS.EVENTS]: ['id', 'event_name', 'event_date', 'event_type', 'description'],
+    [CONFIG.SHEETS.TIP_CALC]: ['id', 'shift_id', 'bartender_name', 'hours_worked', 'tip_share', 'excluded']
+  };
+  
+  return headerMap[sheetName] || [];
 }
