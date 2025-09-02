@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <base target="_top">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bartending Shift Tracker</title>
@@ -180,7 +181,13 @@
         <!-- Dashboard View (Table or Calendar) -->
         <div id="dashboard-page" class="">
             <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 text-center">My Bartending Shifts</h1>
-
+            <div id="loading-spinner" class="text-center py-4 text-gray-500 hidden">
+                <svg class="animate-spin mx-auto h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-2 text-sm">Loading shifts...</p>
+            </div>
             <!-- Tab Navigation -->
             <div class="flex border-b border-gray-200 mb-6 sticky top-0 bg-white z-10">
                 <button onclick="showView('table')" id="tableViewTab" class="flex-1 py-3 px-2 text-sm font-medium focus:outline-none transition-colors duration-200 ease-in-out border-b-2 border-transparent text-gray-500 hover:text-blue-600 hover:border-blue-600">
@@ -447,11 +454,19 @@
 
         // --- Data Loading and Initialization ---
         function loadData() {
-            // Show a simple loading message
+            if (typeof google === 'undefined' || !google.script.run) {
+                console.error('Google Apps Script environment not detected.');
+                // Show a message to the user that the app must be run as a web app.
+                document.getElementById('loading-spinner').innerHTML = '<p class="text-red-500 font-semibold">Please deploy this as a web app to use it.</p>';
+                return;
+            }
+            
             document.getElementById('shifts-table-body').innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Loading shifts...</td></tr>';
+            document.getElementById('loading-spinner').classList.remove('hidden');
             google.script.run
                 .withSuccessHandler(function(shifts) {
                     allShifts = shifts;
+                    document.getElementById('loading-spinner').classList.add('hidden');
                     if (currentView === 'table') {
                         renderTable();
                     } else {
@@ -460,7 +475,7 @@
                     console.log('Data loaded successfully:', allShifts);
                 })
                 .withFailureHandler(function(error) {
-                    // Show error message to the user
+                    document.getElementById('loading-spinner').classList.add('hidden');
                     alert("Error loading data: " + error.message);
                     console.error("Apps Script Error:", error);
                 })
@@ -576,7 +591,6 @@
             google.script.run
                 .withSuccessHandler(function() {
                     hideShiftForm();
-                    loadData();
                 })
                 .withFailureHandler(function(error) {
                     alert("Error saving shift: " + error.message);
@@ -932,7 +946,12 @@
             document.getElementById('parties-page').classList.add('hidden');
             document.getElementById('party-popup').classList.add('hidden');
             showView('table');
-            loadData(); // Start by loading all data from the server
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+                loadData(); // Start by loading all data from the server
+            } else {
+                console.error('Google Apps Script environment not detected.');
+                // Handle the case where the script is not running in the expected environment
+            }
         });
     </script>
 </body>
