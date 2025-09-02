@@ -1,44 +1,41 @@
 /**
- * The special onOpen function runs automatically when the spreadsheet is opened.
- * It creates a custom menu to make it easy to set up the sheets.
+ * @OnlyCurrentDoc
+ *
+ * The above tag tells Google Apps Script to only grant access to the
+ * current document, not all of the user's documents.
  */
-function onOpen() {
-  SpreadsheetApp.getUi()
-      .createMenu('Shift Tracker')
-      .addItem('Set Up Sheets', 'setupSheets')
-      .addToUi();
-}
+
+// Global variables for spreadsheet access
+const SPREADSHEET = SpreadsheetApp.getActiveSpreadsheet();
+const SHIFTS_SHEET = SPREADSHEET.getSheetByName('Shifts');
+const COWORKERS_SHEET = SPREADSHEET.getSheetByName('Coworkers');
+const PARTIES_SHEET = SPREADSHEET.getSheetByName('Parties');
 
 /**
  * Serves the HTML file for the web app.
- * This is the entry point for the web app deployment.
+ * @returns {HtmlOutput} The HTML for the web app.
  */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
-      .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-      .setTitle('Shift Tracker');
+    .setTitle('Bartending Shift Tracker')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**
- * Retrieves all shift data from the spreadsheet and returns it as a JSON-like object.
- * This function handles fetching all related coworker and party data as well.
+ * Retrieves all shifts and their related data from the sheets.
+ * @returns {Array} An array of objects, where each object represents a shift with its coworkers and parties.
  */
 function getAllShifts() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const shiftSheet = spreadsheet.getSheetByName('Shifts');
-  const coworkerSheet = spreadsheet.getSheetByName('Coworkers');
-  const partySheet = spreadsheet.getSheetByName('Parties');
+  const shiftsData = getSheetData(SHIFTS_SHEET);
+  const coworkersData = getSheetData(COWORKERS_SHEET);
+  const partiesData = getSheetData(PARTIES_SHEET);
 
-  const shiftData = getSheetData(shiftSheet);
-  const coworkerData = getSheetData(coworkerSheet);
-  const partyData = getSheetData(partySheet);
+  // Group coworkers and parties by ShiftID for efficient lookup
+  const coworkersByShift = groupDataById(coworkersData, 'ShiftID');
+  const partiesByShift = groupDataById(partiesData, 'ShiftID');
 
-  // Group coworker and party data by ShiftID
-  const coworkersByShift = groupDataById(coworkerData, 'ShiftID');
-  const partiesByShift = groupDataById(partyData, 'ShiftID');
-
-  // Combine all data into a single object for the web app
-  const combinedShifts = shiftData.map(shift => {
+  // Combine data into a single, comprehensive array
+  const combinedShifts = shiftsData.map(shift => {
     return {
       ...shift,
       coworkers: coworkersByShift[shift.ID] || [],
@@ -51,122 +48,98 @@ function getAllShifts() {
 
 /**
  * Saves a single shift, including its associated coworkers and parties.
- * It handles both creating new shifts and updating existing ones.
- * @param {Object} shiftData The shift object sent from the web app.
+ * Creates a new shift if no ID is provided, otherwise updates an existing one.
+ * @param {Object} shiftData The data object for the shift.
  */
 function saveShift(shiftData) {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const shiftSheet = spreadsheet.getSheetByName('Shifts');
-  const coworkerSheet = spreadsheet.getSheetByName('Coworkers');
-  const partySheet = spreadsheet.getSheetByName('Parties');
+  try {
+    const shiftsHeaders = getSheetHeaders(SHIFTS_SHEET);
+    const shiftValues = shiftsHeaders.map(header => {
+      if (header === 'Tags') {
+        return shiftData.Tags.join(','); // Convert tags array to comma-separated string
+      }
+      return shiftData[header];
+    });
 
-  let shiftId = shiftData.ID;
-
-  if (shiftId) {
-    // This is an existing shift, update the existing rows
-    const allShifts = shiftSheet.getDataRange().getValues();
-    const headers = allShifts[0];
-    const dataRows = allShifts.slice(1);
-    const idIndex = headers.indexOf('ID');
-
-    for (let i = 0; i < dataRows.length; i++) {
-      if (dataRows[i][idIndex] === shiftId) {
-        const rowToUpdate = i + 2; // +1 for 0-index, +1 for header row
-        const rowData = [
-          shiftData.ID,
-          shiftData.Date,
-          shiftData.StartTime,
-          shiftData.EndTime,
-          shiftData.Location,
-          shiftData.Tips,
-          shiftData.Notes,
-          shiftData.Tags.join(','),
-          shiftData.Hours,
-          shiftData.HourlyRate
-        ];
-        shiftSheet.getRange(rowToUpdate, 1, 1, rowData.length).setValues([rowData]);
-        break;
+    if (!shiftData.ID) {
+      // New shift - add a unique ID
+      shiftData.ID = Utilities.getUuid();
+      shiftValues[shiftsHeaders.indexOf('ID')] = shiftData.ID;
+      SHIFTS_SHEET.appendRow(shiftValues);
+    } else {
+      // Existing shift - find and update the row
+      const data = SHIFTS_SHEET.getDataRange().getValues();
+      const rowIndex = data.findIndex(row => row[0] === shiftData.ID);
+      if (rowIndex !== -1) {
+        SHIFTS_SHEET.getRange(rowIndex + 1, 1, 1, shiftValues.length).setValues([shiftValues]);
       }
     }
-    
-    // Delete old coworker and party data before writing new
-    deleteRelatedData(coworkerSheet, shiftId);
-    deleteRelatedData(partySheet, shiftId);
-    
-  } else {
-    // This is a new shift, add a new row
-    shiftId = `shift-${new Date().getTime()}`; // Create a unique ID
-    const newShiftRow = [
-      shiftId,
-      shiftData.Date,
-      shiftData.StartTime,
-      shiftData.EndTime,
-      shiftData.Location,
-      shiftData.Tips,
-      shiftData.Notes,
-      shiftData.Tags.join(','),
-      shiftData.Hours,
-      shiftData.HourlyRate
-    ];
-    shiftSheet.appendRow(newShiftRow);
-  }
 
-  // Save coworkers and parties
-  saveRelatedData(coworkerSheet, shiftId, shiftData.coworkers);
-  saveRelatedData(partySheet, shiftId, shiftData.parties);
+    // Save associated data
+    saveAssociatedData(COWORKERS_SHEET, shiftData.ID, shiftData.coworkers, ['ShiftID', 'Name', 'Position', 'Location', 'StartTime', 'EndTime']);
+    saveAssociatedData(PARTIES_SHEET, shiftData.ID, shiftData.parties, ['ShiftID', 'Name', 'Type', 'Details', 'StartTime', 'EndTime', 'Bartenders']);
+
+    SpreadsheetApp.flush(); // Ensure all pending spreadsheet operations are applied
+  } catch (e) {
+    // Log the error for debugging
+    Logger.log(e.stack);
+    throw new Error('An error occurred while saving the shift. Please check the logs.');
+  }
 }
 
 /**
- * Deletes a shift and all its related data.
+ * Deletes a shift and all associated data.
  * @param {string} shiftId The ID of the shift to delete.
  */
 function deleteShift(shiftId) {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const shiftSheet = spreadsheet.getSheetByName('Shifts');
-  const coworkerSheet = spreadsheet.getSheetByName('Coworkers');
-  const partySheet = spreadsheet.getSheetByName('Parties');
+  try {
+    // Delete from Shifts sheet
+    deleteRow(SHIFTS_SHEET, shiftId);
 
-  // Delete the main shift row
-  const shiftData = shiftSheet.getDataRange().getValues();
-  const idIndex = shiftData[0].indexOf('ID');
-  for (let i = 1; i < shiftData.length; i++) {
-    if (shiftData[i][idIndex] === shiftId) {
-      shiftSheet.deleteRow(i + 1);
-      break;
-    }
+    // Delete associated data from other sheets
+    deleteAssociatedRows(COWORKERS_SHEET, shiftId);
+    deleteAssociatedRows(PARTIES_SHEET, shiftId);
+
+    SpreadsheetApp.flush();
+  } catch (e) {
+    Logger.log(e.stack);
+    throw new Error('An error occurred while deleting the shift.');
   }
-
-  // Delete related coworker and party data
-  deleteRelatedData(coworkerSheet, shiftId);
-  deleteRelatedData(partySheet, shiftId);
 }
 
+// --- Helper Functions ---
+
 /**
- * Helper function to read data from a sheet and return it as an array of objects.
- * @param {Sheet} sheet The sheet to read from.
- * @returns {Array<Object>} An array of objects, where each object represents a row.
+ * Gets all data from a sheet and maps it to an array of objects.
+ * @param {Sheet} sheet The sheet to retrieve data from.
+ * @returns {Array} An array of objects.
  */
 function getSheetData(sheet) {
-  if (!sheet) return [];
-  const range = sheet.getDataRange();
-  const values = range.getValues();
-  if (values.length <= 1) return [];
-
-  const headers = values[0];
-  const data = values.slice(1);
-
-  return data.map(row => {
-    const rowObject = {};
-    headers.forEach((header, index) => {
-      rowObject[header] = row[index];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return []; // No data besides headers
+  const headers = data[0];
+  const rows = data.slice(1);
+  return rows.map(row => {
+    const obj = {};
+    headers.forEach((header, i) => {
+      obj[header] = row[i];
     });
-    return rowObject;
+    return obj;
   });
 }
 
 /**
- * Helper function to group an array of objects by a specified key.
- * @param {Array<Object>} data The data to group.
+ * Gets the headers from a sheet.
+ * @param {Sheet} sheet The sheet to retrieve headers from.
+ * @returns {Array} An array of header strings.
+ */
+function getSheetHeaders(sheet) {
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+}
+
+/**
+ * Groups an array of objects by a specified key.
+ * @param {Array} data The array of objects to group.
  * @param {string} key The key to group by.
  * @returns {Object} An object where keys are the grouped values.
  */
@@ -182,49 +155,63 @@ function groupDataById(data, key) {
 }
 
 /**
- * Helper function to save related data to a sheet.
- * @param {Sheet} sheet The sheet to save to.
- * @param {string} shiftId The ID of the related shift.
- * @param {Array<Object>} relatedData The data to save.
+ * Deletes a row from a sheet based on a unique ID.
+ * @param {Sheet} sheet The sheet to perform the deletion on.
+ * @param {string} id The unique ID to find and delete.
  */
-function saveRelatedData(sheet, shiftId, relatedData) {
-  if (!sheet || !relatedData || relatedData.length === 0) return;
-  
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const newRows = relatedData.map(item => {
-    const row = [];
-    headers.forEach(header => {
-      if (header === 'ShiftID') {
-        row.push(shiftId);
-      } else if (header === 'Bartenders') {
-        row.push(item[header].join(','));
-      } else {
-        row.push(item[header]);
-      }
-    });
-    return row;
-  });
-  
-  sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, newRows[0].length).setValues(newRows);
+function deleteRow(sheet, id) {
+  const data = sheet.getDataRange().getValues();
+  const rowIndex = data.findIndex(row => row[0] === id);
+  if (rowIndex !== -1) {
+    sheet.deleteRow(rowIndex + 1);
+  }
 }
 
 /**
- * Helper function to delete related data from a sheet.
- * @param {Sheet} sheet The sheet to delete from.
- * @param {string} shiftId The ID of the related shift.
+ * Deletes multiple rows from a sheet based on a common ID.
+ * @param {Sheet} sheet The sheet to perform the deletion on.
+ * @param {string} id The common ID to find and delete.
  */
-function deleteRelatedData(sheet, shiftId) {
-  if (!sheet) return;
+function deleteAssociatedRows(sheet, id) {
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return;
-  
-  const idIndex = data[0].indexOf('ShiftID');
-  const rowsToDelete = [];
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][idIndex] === shiftId) {
-      rowsToDelete.push(i + 1); // +1 for 1-based indexing
+
+  let rowCount = data.length;
+  // Iterate from bottom to top to handle row deletions without shifting issues
+  for (let i = rowCount - 1; i >= 1; i--) {
+    if (data[i][0] === id) {
+      sheet.deleteRow(i + 1);
     }
   }
-  
-  rowsToDelete.forEach(row => sheet.deleteRow(row));
+}
+
+/**
+ * Saves associated data (e.g., coworkers, parties) for a shift.
+ * @param {Sheet} sheet The sheet to save data to.
+ * @param {string} shiftId The ID of the parent shift.
+ * @param {Array} associatedData The array of data objects to save.
+ * @param {Array} headers The headers of the sheet.
+ */
+function saveAssociatedData(sheet, shiftId, associatedData, headers) {
+  // First, clear old associated data for this shift
+  deleteAssociatedRows(sheet, shiftId);
+
+  // Then, append the new data
+  if (associatedData && associatedData.length > 0) {
+    const values = associatedData.map(item => {
+      const row = headers.map(header => {
+        // Handle Bartenders array conversion for parties
+        if (header === 'Bartenders' && Array.isArray(item[header])) {
+          return item[header].join(',');
+        }
+        // Special case for ShiftID
+        if (header === 'ShiftID') {
+          return shiftId;
+        }
+        return item[header];
+      });
+      return row;
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, values[0].length).setValues(values);
+  }
 }
