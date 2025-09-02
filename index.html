@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bartending Shift Tracker</title>
+    <!-- Load Tailwind CSS from CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top for scrolling content */
+            min-height: 100vh;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .app-container {
+            width: 100%;
+            max-width: 100%; /* Full width on small screens */
+            /* On larger screens, this could be max-w-xl or similar */
+            background-color: #ffffff;
+            min-height: 100vh; /* Ensure it takes full height */
+            box-shadow: 0 0 10px rgba(0,0,0,0.05); /* Subtle shadow for app boundary */
+            padding: 1rem; /* Default padding */
+            box-sizing: border-box; /* Include padding in width/height */
+        }
+        @media (min-width: 640px) { /* sm breakpoint */
+            .app-container {
+                max-width: 640px; /* Constrain width on larger screens */
+                padding: 1.5rem;
+            }
+        }
+        .hidden {
+            display: none;
+        }
+
+        /* Calendar specific styles */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .calendar-header-day {
+            background-color: #e2e8f0; /* bg-gray-200 */
+            padding: 8px 4px;
+            font-weight: 600;
+            text-align: center;
+            border-radius: 4px;
+            font-size: 0.75rem; /* Smaller text for mobile */
+        }
+        .calendar-day {
+            background-color: #f8fafc; /* bg-gray-50 */
+            min-height: 60px; /* Adjust height for mobile content */
+            padding: 4px; /* Smaller padding for mobile */
+            border-radius: 6px;
+            border: 1px solid #e2e8f0; /* border-gray-200 */
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content horizontally */
+            justify-content: flex-start; /* Align content to top */
+        }
+        .calendar-day.current-month {
+            background-color: #ffffff; /* bg-white */
+        }
+        .calendar-day.has-shift {
+            background-color: #d1fae5; /* bg-green-100 */
+            border-color: #34d399; /* border-green-400 */
+        }
+        .calendar-day:hover {
+            background-color: #eff6ff; /* bg-blue-50 */
+        }
+        .calendar-day-number {
+            font-weight: 600;
+            margin-bottom: 2px;
+            color: #1f2937; /* text-gray-900 */
+            font-size: 0.875rem; /* base text size */
+        }
+        .calendar-day-icon {
+            font-size: 1.2rem; /* Larger emoji */
+            line-height: 1;
+            margin-top: 4px; /* Space between number and icon */
+        }
+        .calendar-nav-button {
+            background-color: #e0e7ff; /* bg-indigo-100 */
+            color: #4f46e5; /* text-indigo-700 */
+            padding: 6px 10px; /* Adjusted padding */
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            font-size: 0.875rem; /* base text size */
+        }
+        .calendar-nav-button:hover {
+            background-color: #c7d2fe; /* bg-indigo-200 */
+        }
+
+        /* Table specific styles for mobile responsiveness */
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto; /* Enable horizontal scrolling for table on small screens */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        }
+        .table-responsive table {
+            min-width: 600px; /* Ensure table doesn't shrink too much */
+        }
+
+        /* Selected date highlight in calendar */
+        .calendar-day.selected {
+            outline: 2px solid #3b82f6; /* blue-500 */
+            outline-offset: -2px;
+            box-shadow: 0 0 0 2px #bfdbfe; /* blue-200 */
+        }
+
+        /* Coworker table styles */
+        .coworker-table-header {
+            text-align: left;
+            padding: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #4b5563; /* text-gray-600 */
+            background-color: #e5e7eb; /* bg-gray-200 */
+        }
+        .coworker-table-cell {
+            padding: 0.5rem;
+            border-bottom: 1px solid #e5e7eb; /* border-gray-200 */
+        }
+        .coworker-input, .coworker-select {
+            width: 100%;
+            border-radius: 0.25rem;
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            padding: 0.25rem;
+            font-size: 0.875rem;
+        }
+
+        /* Party card styles */
+        .party-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background-color: #f9fafb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .party-popup-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .party-popup-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Dashboard View (Table or Calendar) -->
+        <div id="dashboard-page" class="">
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 text-center">My Bartending Shifts</h1>
+
+            <!-- Tab Navigation -->
+            <div class="flex border-b border-gray-200 mb-6 sticky top-0 bg-white z-10">
+                <button onclick="showView('table')" id="tableViewTab" class="flex-1 py-3 px-2 text-sm font-medium focus:outline-none transition-colors duration-200 ease-in-out border-b-2 border-transparent text-gray-500 hover:text-blue-600 hover:border-blue-600">
+                    Table View
+                </button>
+                <button onclick="showView('calendar')" id="calendarViewTab" class="flex-1 py-3 px-2 text-sm font-medium focus:outline-none transition-colors duration-200 ease-in-out border-b-2 border-transparent text-gray-500 hover:text-blue-600 hover:border-blue-600">
+                    Calendar View
+                </button>
+            </div>
+
+            <div class="mb-6 flex justify-end">
+                <button onclick="showShiftForm(selectedDateForSummary)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                    + Add New Shift
+                </button>
+            </div>
+
+            <!-- Table View Content -->
+            <div id="tableViewContent" class="view-content">
+                <div class="table-responsive rounded-lg border border-gray-200">
+                    <table class="w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hours</th>
+                                <th scope="col" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tips</th>
+                                <th scope="col" class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
+                                <th scope="col" class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shifts-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Shift data will be rendered here dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Calendar View Content -->
+            <div id="calendarViewContent" class="view-content hidden">
+                <!-- Selected Date Stats and Actions -->
+                <div id="selected-shift-summary" class="bg-green-600 text-white rounded-lg p-4 mb-4 hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 id="summary-date" class="text-lg font-bold"></h3>
+                        <div class="flex space-x-2">
+                            <button onclick="editShift(selectedDateForSummary)" class="bg-white text-green-700 px-3 py-1 rounded-md text-sm font-semibold hover:bg-gray-100 transition duration-200">Edit</button>
+                            <button onclick="deleteShift(selectedDateForSummary)" class="bg-red-500 text-white px-3 py-1 rounded-md text-sm font-semibold hover:bg-red-600 transition duration-200">Delete</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center text-sm">
+                        <div>
+                            <p class="font-medium text-green-100">Tips</p>
+                            <p id="summary-tips" class="text-lg font-bold"></p>
+                        </div>
+                        <div>
+                            <p class="font-medium text-green-100">Hourly Rate</p>
+                            <p id="summary-hourly-rate" class="text-lg font-bold"></p>
+                        </div>
+                        <div>
+                            <p class="font-medium text-green-100">Hours</p>
+                            <p id="summary-hours" class="text-lg font-bold"></p>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div class="flex justify-between items-center mb-4">
+                    <button onclick="changeMonth(-1)" class="calendar-nav-button">&lt; Prev</button>
+                    <h2 id="current-month-year" class="text-xl font-bold text-gray-800"></h2>
+                    <button onclick="changeMonth(1)" class="calendar-nav-button">Next &gt;</button>
+                </div>
+                <div id="calendar-container" class="calendar-grid">
+                    <!-- Calendar days will be rendered here by JavaScript -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Shift Form Page (initially hidden) -->
+        <div id="shift-form-page" class="hidden absolute top-0 left-0 w-full h-full bg-white p-4 sm:p-6 z-20 overflow-y-auto">
+            <h2 id="form-title" class="text-xl sm:text-2xl font-bold text-gray-900 mb-6 text-center">Add New Shift</h2>
+
+            <form id="shift-form" class="space-y-4">
+                <input type="hidden" id="shift-id" name="ID">
+                <div>
+                    <label for="shiftDate" class="block text-sm font-medium text-gray-700">Date</label>
+                    <input type="date" id="shiftDate" name="Date" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="startTime" class="block text-sm font-medium text-gray-700">Start Time</label>
+                        <input type="time" id="startTime" name="StartTime" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required>
+                    </div>
+                    <div>
+                        <label for="endTime" class="block text-sm font-medium text-gray-700">End Time</label>
+                        <input type="time" id="endTime" name="EndTime" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required>
+                    </div>
+                </div>
+                 <div>
+                    <label for="location" class="block text-sm font-medium text-gray-700">My Location</label>
+                    <select id="location" name="Location" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">N/A</option>
+                        <option value="Pit Bar">Pit Bar</option>
+                        <option value="Service Bar">Service Bar</option>
+                        <option value="Middle Bar">Middle Bar</option>
+                        <option value="Pool Bar">Pool Bar</option>
+                        <option value="Upstairs Bar">Upstairs Bar</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="tips" class="block text-sm font-medium text-gray-700">Tips ($)</label>
+                    <input type="number" id="tips" name="Tips" step="0.01" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required>
+                </div>
+                <div>
+                    <label for="notes" class="block text-sm font-medium text-gray-700">Notes</label>
+                    <textarea id="notes" name="Notes" rows="3" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></textarea>
+                </div>
+                <div>
+                    <label for="tags" class="block text-sm font-medium text-gray-700">Tags</label>
+                    <select id="tags" name="Tags" multiple class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-24">
+                        <option value="weekend">Weekend</option>
+                        <option value="weekday">Weekday</option>
+                        <option value="busy">Busy Night</option>
+                        <option value="slow">Slow Night</option>
+                        <option value="private-event">Private Event</option>
+                        <option value="holiday">Holiday</option>
+                    </select>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mt-6">
+                    <button type="button" onclick="showCoworkers()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm mb-3 sm:mb-0">
+                        Coworkers
+                    </button>
+                    <button type="button" onclick="showParties()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm mb-3 sm:mb-0">
+                        Parties
+                    </button>
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" onclick="hideShiftForm()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                            Cancel
+                        </button>
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                            Save Shift
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Coworker Page (initially hidden) -->
+        <div id="coworker-page" class="hidden absolute top-0 left-0 w-full h-full bg-white p-4 sm:p-6 z-30 overflow-y-auto">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-900 mb-6 text-center">Coworkers for this Shift</h2>
+            
+            <div class="table-responsive rounded-lg border border-gray-200">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-200">
+                            <th class="coworker-table-header">Name</th>
+                            <th class="coworker-table-header">Position</th>
+                            <th class="coworker-table-header">Location</th>
+                            <th class="coworker-table-header">Start</th>
+                            <th class="coworker-table-header">End</th>
+                            <th class="coworker-table-header text-right">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="coworker-table-body">
+                        <!-- Coworker rows will be dynamically added here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-between items-center mt-4">
+                <button type="button" onclick="addCoworkerRow()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                    + Add Coworker
+                </button>
+                <button type="button" onclick="saveCoworkers()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                    Done
+                </button>
+            </div>
+        </div>
+
+        <!-- Parties Page (initially hidden) -->
+        <div id="parties-page" class="hidden absolute top-0 left-0 w-full h-full bg-white p-4 sm:p-6 z-30 overflow-y-auto">
+            <h2 class="text-xl sm:text-2xl font-bold text-gray-900 mb-6 text-center">Parties for this Shift</h2>
+            
+            <div id="party-cards-container" class="space-y-4 mb-4">
+                <!-- Party cards will be dynamically added here -->
+            </div>
+
+            <div class="flex justify-between items-center mt-4">
+                <button type="button" onclick="showPartyForm()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                    + Add New Party
+                </button>
+                <button type="button" onclick="saveParties()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-200 ease-in-out text-sm">
+                    Done
+                </button>
+            </div>
+        </div>
+
+        <!-- Party Popup Form (initially hidden) -->
+        <div id="party-popup" class="party-popup-modal hidden">
+            <div class="party-popup-content">
+                <h3 id="party-form-title" class="text-lg font-bold text-gray-900 mb-4 text-center">Add New Party</h3>
+                <form id="party-form" class="space-y-4">
+                    <div>
+                        <label for="partyName" class="block text-sm font-medium text-gray-700">Party Name</label>
+                        <input type="text" id="partyName" name="partyName" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                    </div>
+                    <div>
+                        <label for="partyType" class="block text-sm font-medium text-gray-700">Party Type</label>
+                        <select id="partyType" name="partyType" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                            <option value="">Select a type...</option>
+                            <option value="birthday">Birthday</option>
+                            <option value="corporate">Corporate</option>
+                            <option value="wedding">Wedding</option>
+                            <option value="misc">Miscellaneous</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="partyDetails" class="block text-sm font-medium text-gray-700">Details</label>
+                        <textarea id="partyDetails" name="partyDetails" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="partyStartTime" class="block text-sm font-medium text-gray-700">Start Time</label>
+                            <input type="time" id="partyStartTime" name="partyStartTime" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="partyEndTime" class="block text-sm font-medium text-gray-700">End Time</label>
+                            <input type="time" id="partyEndTime" name="partyEndTime" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="partyBartenders" class="block text-sm font-medium text-gray-700">Bartender(s)</label>
+                        <select id="partyBartenders" name="partyBartenders" multiple class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                            <!-- Options populated dynamically from currentShiftCoworkers -->
+                        </select>
+                    </div>
+                    <div class="flex justify-end space-x-3 mt-4">
+                        <button type="button" onclick="hidePartyForm()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-lg shadow-md text-sm">
+                            Cancel
+                        </button>
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md text-sm">
+                            Save Party
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentView = 'table';
+        let currentCalendarDate = new Date();
+        let selectedDateForSummary = null;
+        let allShifts = []; // Main array to store all shift data from the server
+
+        const positions = ['Bartender', 'Server', 'Barback', 'Host', 'Manager', 'Chef'];
+        const locations = ['Pit Bar', 'Service Bar', 'Middle Bar', 'Pool Bar', 'Upstairs Bar'];
+        const partyTypes = ['Birthday', 'Corporate', 'Wedding', 'Miscellaneous'];
+
+        let currentShiftCoworkers = [];
+        let currentShiftParties = [];
+        let editingPartyIndex = null;
+        const myName = 'Ian'; // Your name, pre-filled
+        const myPosition = 'Bartender';
+
+        // --- Data Loading and Initialization ---
+        function loadData() {
+            // Show a simple loading message
+            document.getElementById('shifts-table-body').innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">Loading shifts...</td></tr>';
+            google.script.run
+                .withSuccessHandler(function(shifts) {
+                    allShifts = shifts;
+                    if (currentView === 'table') {
+                        renderTable();
+                    } else {
+                        renderCalendar();
+                    }
+                    console.log('Data loaded successfully:', allShifts);
+                })
+                .withFailureHandler(function(error) {
+                    // Show error message to the user
+                    alert("Error loading data: " + error.message);
+                    console.error("Apps Script Error:", error);
+                })
+                .getAllShifts();
+        }
+
+        // --- General App View Control ---
+        function showView(view) {
+            currentView = view;
+            document.getElementById('tableViewContent').classList.add('hidden');
+            document.getElementById('calendarViewContent').classList.add('hidden');
+            document.getElementById('tableViewTab').classList.remove('text-blue-600', 'border-blue-600');
+            document.getElementById('calendarViewTab').classList.remove('text-blue-600', 'border-blue-600');
+            document.getElementById('tableViewTab').classList.add('text-gray-500', 'border-transparent');
+            document.getElementById('calendarViewTab').classList.add('text-gray-500', 'border-transparent');
+            if (view === 'table') {
+                document.getElementById('tableViewContent').classList.remove('hidden');
+                document.getElementById('tableViewTab').classList.add('text-blue-600', 'border-blue-600');
+                renderTable();
+            } else if (view === 'calendar') {
+                document.getElementById('calendarViewContent').classList.remove('hidden');
+                document.getElementById('calendarViewTab').classList.add('text-blue-600', 'border-blue-600');
+                renderCalendar();
+            }
+        }
+
+        function showShiftForm(date = null) {
+            const dashboardPage = document.getElementById('dashboard-page');
+            const formPage = document.getElementById('shift-form-page');
+            const formTitle = document.getElementById('form-title');
+            const saveButton = formPage.querySelector('button[type="submit"]');
+            const shiftForm = document.getElementById('shift-form');
+            shiftForm.reset();
+            currentShiftCoworkers = [];
+            currentShiftParties = [];
+
+            let shiftToEdit = allShifts.find(shift => shift.Date === date);
+            
+            if (shiftToEdit) {
+                formTitle.textContent = 'Edit Shift';
+                saveButton.textContent = 'Save Changes';
+                document.getElementById('shift-id').value = shiftToEdit.ID;
+                document.getElementById('shiftDate').value = shiftToEdit.Date;
+                document.getElementById('startTime').value = shiftToEdit.StartTime;
+                document.getElementById('endTime').value = shiftToEdit.EndTime;
+                document.getElementById('location').value = shiftToEdit.Location || '';
+                document.getElementById('tips').value = shiftToEdit.Tips;
+                document.getElementById('notes').value = shiftToEdit.Notes;
+                Array.from(document.getElementById('tags').options).forEach(option => {
+                    option.selected = shiftToEdit.Tags?.split(',').includes(option.value);
+                });
+                currentShiftCoworkers = JSON.parse(JSON.stringify(shiftToEdit.coworkers));
+                currentShiftParties = JSON.parse(JSON.stringify(shiftToEdit.parties));
+                console.log(`Editing shift: ${date}`);
+            } else {
+                formTitle.textContent = 'Add New Shift';
+                saveButton.textContent = 'Save Shift';
+                document.getElementById('shift-id').value = '';
+                if (date) {
+                    document.getElementById('shiftDate').value = date;
+                } else {
+                    document.getElementById('shiftDate').value = new Date().toISOString().split('T')[0];
+                }
+            }
+            dashboardPage.classList.add('hidden');
+            formPage.classList.remove('hidden');
+        }
+
+        function hideShiftForm() {
+            document.getElementById('shift-form-page').classList.add('hidden');
+            document.getElementById('dashboard-page').classList.remove('hidden');
+            loadData(); // Reload data to ensure dashboard is up to date
+        }
+
+        function editShift(date) {
+            showShiftForm(date);
+        }
+
+        function deleteShift(date) {
+            if (confirm(`Are you sure you want to delete the shift on ${date}?`)) {
+                const shiftToDelete = allShifts.find(shift => shift.Date === date);
+                if (shiftToDelete) {
+                    google.script.run
+                        .withSuccessHandler(loadData)
+                        .withFailureHandler(function(error) {
+                            alert("Error deleting shift: " + error.message);
+                            console.error("Apps Script Error:", error);
+                        })
+                        .deleteShift(shiftToDelete.ID);
+                    console.log(`Deleting shift: ${date}`);
+                }
+            }
+        }
+
+        document.getElementById('shift-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const data = {
+                ID: formData.get('ID') || null,
+                Date: formData.get('Date'),
+                StartTime: formData.get('StartTime'),
+                EndTime: formData.get('EndTime'),
+                Location: formData.get('Location'),
+                Tips: parseFloat(formData.get('Tips')),
+                Notes: formData.get('Notes'),
+                Tags: Array.from(document.getElementById('tags').selectedOptions).map(option => option.value),
+                Hours: calculateHours(formData.get('StartTime'), formData.get('EndTime')),
+                HourlyRate: parseFloat(formData.get('Tips')) / calculateHours(formData.get('StartTime'), formData.get('EndTime')),
+                coworkers: currentShiftCoworkers,
+                parties: currentShiftParties
+            };
+
+            google.script.run
+                .withSuccessHandler(function() {
+                    hideShiftForm();
+                    loadData();
+                })
+                .withFailureHandler(function(error) {
+                    alert("Error saving shift: " + error.message);
+                    console.error("Apps Script Error:", error);
+                })
+                .saveShift(data);
+        });
+
+        // --- Coworker Page Control ---
+        function showCoworkers() {
+            document.getElementById('shift-form-page').classList.add('hidden');
+            document.getElementById('coworker-page').classList.remove('hidden');
+            
+            let myCoworkerIndex = currentShiftCoworkers.findIndex(coworker => coworker.name === myName);
+            if (myCoworkerIndex === -1) {
+                currentShiftCoworkers.unshift({ 
+                    name: myName, 
+                    position: myPosition, 
+                    location: document.getElementById('location').value,
+                    startTime: document.getElementById('startTime').value, 
+                    endTime: document.getElementById('endTime').value 
+                });
+            } else {
+                currentShiftCoworkers[myCoworkerIndex].startTime = document.getElementById('startTime').value;
+                currentShiftCoworkers[myCoworkerIndex].endTime = document.getElementById('endTime').value;
+                currentShiftCoworkers[myCoworkerIndex].location = document.getElementById('location').value;
+            }
+
+            renderCoworkerTable();
+        }
+
+        function saveCoworkers() {
+            const tableBody = document.getElementById('coworker-table-body');
+            currentShiftCoworkers = [];
+            let myInfo = null;
+            for (let i = 0; i < tableBody.rows.length; i++) {
+                const row = tableBody.rows[i];
+                const coworker = {
+                    name: row.querySelector('.coworker-name-input').value,
+                    position: row.querySelector('.coworker-position-select').value,
+                    location: row.querySelector('.coworker-location-select').value,
+                    startTime: row.querySelector('.coworker-start-input').value,
+                    endTime: row.querySelector('.coworker-end-input').value,
+                };
+                currentShiftCoworkers.push(coworker);
+                if (coworker.name === myName) {
+                    myInfo = coworker;
+                }
+            }
+
+            if (myInfo) {
+                document.getElementById('startTime').value = myInfo.startTime;
+                document.getElementById('endTime').value = myInfo.endTime;
+                document.getElementById('location').value = myInfo.location;
+            }
+
+            document.getElementById('coworker-page').classList.add('hidden');
+            document.getElementById('shift-form-page').classList.remove('hidden');
+        }
+
+        function renderCoworkerTable() {
+            const tableBody = document.getElementById('coworker-table-body');
+            tableBody.innerHTML = '';
+            currentShiftCoworkers.forEach((coworker, index) => {
+                const row = tableBody.insertRow();
+                const isMyRow = coworker.name === myName;
+                const nameInput = isMyRow ? `<input type="text" value="${coworker.name}" class="coworker-name-input" readonly>` : `<input type="text" value="${coworker.name}" class="coworker-name-input">`;
+                const removeButton = isMyRow ? `<button class="text-gray-400 font-semibold text-sm cursor-not-allowed" disabled>Remove</button>` : `<button onclick="removeCoworkerRow(this, ${index})" class="text-red-600 hover:text-red-800 font-semibold text-sm">Remove</button>`;
+
+                row.innerHTML = `
+                    <td class="coworker-table-cell">${nameInput}</td>
+                    <td class="coworker-table-cell">
+                        <select class="coworker-position-select" ${isMyRow ? 'disabled' : ''}>
+                            ${positions.map(pos => `<option value="${pos}" ${coworker.position === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="coworker-table-cell">
+                        <select class="coworker-location-select">
+                             <option value="">N/A</option>
+                            ${locations.map(loc => `<option value="${loc}">${loc}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="coworker-table-cell"><input type="time" value="${coworker.startTime}" class="coworker-start-input"></td>
+                    <td class="coworker-table-cell"><input type="time" value="${coworker.endTime}" class="coworker-end-input"></td>
+                    <td class="coworker-table-cell text-right">${removeButton}</td>
+                `;
+                 row.querySelector('.coworker-location-select').value = coworker.location || '';
+            });
+        }
+
+        function addCoworkerRow() {
+            const tableBody = document.getElementById('coworker-table-body');
+            const newRow = tableBody.insertRow();
+            const locationOptions = locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+            newRow.innerHTML = `
+                <td class="coworker-table-cell"><input type="text" class="coworker-name-input"></td>
+                <td class="coworker-table-cell">
+                    <select class="coworker-position-select">
+                        ${positions.map(pos => `<option value="${pos}">${pos}</option>`).join('')}
+                    </select>
+                </td>
+                <td class="coworker-table-cell">
+                     <select class="coworker-location-select">
+                         <option value="">N/A</option>
+                         ${locationOptions}
+                     </select>
+                </td>
+                <td class="coworker-table-cell"><input type="time" class="coworker-start-input"></td>
+                <td class="coworker-table-cell"><input type="time" class="coworker-end-input"></td>
+                <td class="coworker-table-cell text-right"><button onclick="removeCoworkerRow(this)" class="text-red-600 hover:text-red-800 font-semibold text-sm">Remove</button></td>
+            `;
+        }
+
+        function removeCoworkerRow(button) {
+            const row = button.closest('tr');
+            row.remove();
+        }
+
+        // --- Parties Page Control ---
+        function showParties() {
+            document.getElementById('shift-form-page').classList.add('hidden');
+            document.getElementById('parties-page').classList.remove('hidden');
+            renderPartyCards();
+        }
+
+        function saveParties() {
+            document.getElementById('parties-page').classList.add('hidden');
+            document.getElementById('shift-form-page').classList.remove('hidden');
+        }
+
+        function renderPartyCards() {
+            const container = document.getElementById('party-cards-container');
+            container.innerHTML = '';
+            if (currentShiftParties.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 italic">No parties added for this shift.</p>';
+                return;
+            }
+            currentShiftParties.forEach((party, index) => {
+                const partyCard = document.createElement('div');
+                partyCard.className = 'party-card';
+                partyCard.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-lg font-bold">${party.name || 'Untitled Party'}</h4>
+                        <div class="flex space-x-2">
+                            <button onclick="editParty(${index})" class="text-blue-600 hover:text-blue-800 text-sm font-semibold">Edit</button>
+                            <button onclick="deleteParty(${index})" class="text-red-600 hover:text-red-800 text-sm font-semibold">Delete</button>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-700"><span class="font-semibold">Type:</span> ${party.type || 'N/A'}</p>
+                    <p class="text-sm text-gray-700"><span class="font-semibold">Time:</span> ${party.startTime} - ${party.endTime}</p>
+                    <p class="text-sm text-gray-700 mt-1"><span class="font-semibold">Details:</span> ${party.details || 'None'}</p>
+                    <p class="text-sm text-gray-700 mt-1"><span class="font-semibold">Bartender(s):</span> ${party.bartenders?.join(', ') || 'N/A'}</p>
+                `;
+                container.appendChild(partyCard);
+            });
+        }
+
+        function showPartyForm(partyIndex = null) {
+            const formContainer = document.getElementById('party-popup');
+            const formTitle = document.getElementById('party-form-title');
+            const partyForm = document.getElementById('party-form');
+            partyForm.reset();
+            editingPartyIndex = partyIndex;
+            
+            const bartendersSelect = document.getElementById('partyBartenders');
+            bartendersSelect.innerHTML = '';
+            const availableBartenders = currentShiftCoworkers.filter(cw => cw.position === myPosition);
+            availableBartenders.forEach(coworker => {
+                const option = document.createElement('option');
+                option.value = coworker.name;
+                option.textContent = coworker.name;
+                bartendersSelect.appendChild(option);
+            });
+            
+            if (partyIndex !== null) {
+                formTitle.textContent = 'Edit Party';
+                const partyToEdit = currentShiftParties[partyIndex];
+                document.getElementById('partyName').value = partyToEdit.name;
+                document.getElementById('partyType').value = partyToEdit.type;
+                document.getElementById('partyDetails').value = partyToEdit.details;
+                document.getElementById('partyStartTime').value = partyToEdit.startTime;
+                document.getElementById('partyEndTime').value = partyToEdit.endTime;
+                Array.from(bartendersSelect.options).forEach(option => {
+                    option.selected = partyToEdit.bartenders?.includes(option.value);
+                });
+            } else {
+                formTitle.textContent = 'Add New Party';
+            }
+            formContainer.classList.remove('hidden');
+        }
+        
+        function hidePartyForm() {
+            document.getElementById('party-popup').classList.add('hidden');
+        }
+        
+        document.getElementById('party-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const form = event.target;
+            const partyData = {
+                name: form.partyName.value,
+                type: form.partyType.value,
+                details: form.partyDetails.value,
+                startTime: form.partyStartTime.value,
+                endTime: form.partyEndTime.value,
+                bartenders: Array.from(form.partyBartenders.selectedOptions).map(option => option.value)
+            };
+            if (editingPartyIndex !== null) {
+                currentShiftParties[editingPartyIndex] = partyData;
+            } else {
+                currentShiftParties.push(partyData);
+            }
+            hidePartyForm();
+            renderPartyCards();
+        });
+
+        function editParty(index) {
+            showPartyForm(index);
+        }
+
+        function deleteParty(index) {
+            if (confirm('Are you sure you want to delete this party?')) {
+                currentShiftParties.splice(index, 1);
+                renderPartyCards();
+            }
+        }
+        
+        // --- Calendar & Table Rendering Logic ---
+        function renderCalendar() {
+            const calendarContainer = document.getElementById('calendar-container');
+            const monthYearDisplay = document.getElementById('current-month-year');
+            calendarContainer.innerHTML = '';
+            const year = currentCalendarDate.getFullYear();
+            const month = currentCalendarDate.getMonth();
+            monthYearDisplay.textContent = new Date(year, month).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            weekdays.forEach(day => {
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'calendar-header-day';
+                dayHeader.textContent = day;
+                calendarContainer.appendChild(dayHeader);
+            });
+            for (let i = 0; i < firstDayOfMonth; i++) {
+                const emptyDay = document.createElement('div');
+                emptyDay.className = 'calendar-day';
+                calendarContainer.appendChild(emptyDay);
+            }
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const isoDate = date.toISOString().split('T')[0];
+                const shiftData = allShifts.find(s => s.Date === isoDate);
+                const dayElement = document.createElement('div');
+                dayElement.className = `calendar-day current-month cursor-pointer`;
+                if (shiftData) {
+                    dayElement.classList.add('has-shift');
+                }
+                if (isoDate === selectedDateForSummary) {
+                    dayElement.classList.add('selected');
+                }
+                dayElement.dataset.date = isoDate;
+                dayElement.onclick = () => selectCalendarDate(isoDate);
+                const dayNumber = document.createElement('div');
+                dayNumber.className = 'calendar-day-number';
+                dayNumber.textContent = day;
+                dayElement.appendChild(dayNumber);
+                if (shiftData) {
+                    const shiftIcon = document.createElement('div');
+                    shiftIcon.className = 'calendar-day-icon';
+                    shiftIcon.textContent = '💰';
+                    dayElement.appendChild(shiftIcon);
+                }
+                calendarContainer.appendChild(dayElement);
+            }
+            if (selectedDateForSummary && allShifts.find(s => s.Date === selectedDateForSummary)) {
+                updateSelectedShiftSummary(selectedDateForSummary);
+            } else {
+                document.getElementById('selected-shift-summary').classList.add('hidden');
+            }
+        }
+        function changeMonth(delta) {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+            selectedDateForSummary = null;
+            renderCalendar();
+        }
+        function selectCalendarDate(date) {
+            const previouslySelected = document.querySelector('.calendar-day.selected');
+            if (previouslySelected) {
+                previouslySelected.classList.remove('selected');
+            }
+            const newlySelected = document.querySelector(`.calendar-day[data-date="${date}"]`);
+            if (newlySelected) {
+                newlySelected.classList.add('selected');
+            }
+            selectedDateForSummary = date;
+            const shift = allShifts.find(s => s.Date === date);
+            if (shift) {
+                updateSelectedShiftSummary(date);
+            } else {
+                document.getElementById('selected-shift-summary').classList.add('hidden');
+            }
+        }
+        function updateSelectedShiftSummary(date) {
+            const summaryDiv = document.getElementById('selected-shift-summary');
+            const shift = allShifts.find(s => s.Date === date);
+            if (shift) {
+                document.getElementById('summary-date').textContent = new Date(shift.Date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                document.getElementById('summary-tips').textContent = `$${shift.Tips.toFixed(2)}`;
+                document.getElementById('summary-hourly-rate').textContent = `$${shift.HourlyRate.toFixed(2)}/hr`;
+                document.getElementById('summary-hours').textContent = `${shift.Hours.toFixed(1)}h`;
+                summaryDiv.classList.remove('hidden');
+            } else {
+                summaryDiv.classList.add('hidden');
+            }
+        }
+        function calculateHours(startTime, endTime) {
+            const start = new Date(`2000-01-01T${startTime}:00`);
+            let end = new Date(`2000-01-01T${endTime}:00`);
+            if (end < start) {
+                end.setDate(end.getDate() + 1);
+            }
+            const diffMs = end - start;
+            return diffMs / (1000 * 60 * 60);
+        }
+        function renderTable() {
+            const tableBody = document.getElementById('shifts-table-body');
+            tableBody.innerHTML = '';
+            const sortedShifts = [...allShifts].sort((a, b) => new Date(a.Date) - new Date(b.Date));
+            if (sortedShifts.length === 0) {
+                 tableBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-gray-500">No shifts recorded yet.</td></tr>';
+            }
+            sortedShifts.forEach(shift => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50 cursor-pointer';
+                row.onclick = () => editShift(shift.Date);
+                row.innerHTML = `
+                    <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${new Date(shift.Date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${shift.Hours.toFixed(1)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">$${shift.Tips.toFixed(2)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">$${shift.HourlyRate.toFixed(2)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
+                        <button onclick="event.stopPropagation(); editShift('${shift.Date}')" class="text-indigo-600 hover:text-indigo-900 mr-2 text-sm">Edit</button>
+                        <button onclick="event.stopPropagation(); deleteShift('${shift.Date}')" class="text-red-600 hover:text-red-900 text-sm">Del</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('dashboard-page').classList.remove('hidden');
+            document.getElementById('shift-form-page').classList.add('hidden');
+            document.getElementById('coworker-page').classList.add('hidden');
+            document.getElementById('parties-page').classList.add('hidden');
+            document.getElementById('party-popup').classList.add('hidden');
+            showView('table');
+            loadData(); // Start by loading all data from the server
+        });
+    </script>
+</body>
+</html>
