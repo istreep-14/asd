@@ -93,36 +93,60 @@ function getAllShifts() {
   try {
     Logger.log('Getting all shifts...');
     const sheet = getShiftsSheet();
-    const data = sheet.getDataRange().getValues();
     
-    Logger.log('Raw data from sheet: ' + JSON.stringify(data));
-    
-    if (data.length <= 1) {
+    // Check if sheet has any data beyond headers
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
       Logger.log('No shifts found, returning empty array');
       return [];
     }
     
+    // Get all data including headers
+    const data = sheet.getRange(1, 1, lastRow, 10).getValues();
+    Logger.log('Raw data from sheet: ' + JSON.stringify(data.slice(0, 3))); // Log first 3 rows for debugging
+    
     const shifts = [];
+    // Start from row 2 (index 1) to skip headers
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      if (!row[0]) continue; // Skip empty rows
+      
+      // Skip completely empty rows
+      if (!row[0] && !row[1] && !row[2]) continue;
       
       // Handle date conversion properly
       let dateValue = row[1];
       if (dateValue instanceof Date) {
-        dateValue = Utilities.formatDate(dateValue, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        // Format date as YYYY-MM-DD
+        const year = dateValue.getFullYear();
+        const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+        const day = String(dateValue.getDate()).padStart(2, '0');
+        dateValue = `${year}-${month}-${day}`;
+      } else if (typeof dateValue === 'string') {
+        // If it's already a string, ensure it's in the right format
+        dateValue = dateValue.split('T')[0]; // Remove time part if present
+      }
+      
+      // Handle time values - ensure they're strings
+      let startTime = row[2];
+      let endTime = row[3];
+      
+      if (startTime instanceof Date) {
+        startTime = startTime.toTimeString().substring(0, 5); // HH:MM format
+      }
+      if (endTime instanceof Date) {
+        endTime = endTime.toTimeString().substring(0, 5); // HH:MM format
       }
       
       shifts.push({
-        id: row[0],
+        id: String(row[0] || ''),
         date: dateValue,
-        startTime: row[2],
-        endTime: row[3],
+        startTime: String(startTime || ''),
+        endTime: String(endTime || ''),
         hours: parseFloat(row[4]) || 0,
-        location: row[5],
+        location: String(row[5] || ''),
         tips: parseFloat(row[6]) || 0,
         tipsPerHour: parseFloat(row[7]) || 0,
-        notes: row[8],
+        notes: String(row[8] || ''),
         created: row[9]
       });
     }
@@ -134,11 +158,13 @@ function getAllShifts() {
       return dateB - dateA;
     });
     
-    Logger.log('Processed shifts: ' + JSON.stringify(shifts));
+    Logger.log('Processed shifts count: ' + shifts.length);
+    Logger.log('First shift: ' + JSON.stringify(shifts[0]));
     return shifts;
   } catch (error) {
     Logger.log('Error getting shifts: ' + error.toString());
-    throw error;
+    Logger.log('Error stack: ' + error.stack);
+    throw new Error('Failed to retrieve shifts: ' + error.message);
   }
 }
 
@@ -148,21 +174,27 @@ function getAllShifts() {
 function addShift(shiftData) {
   try {
     Logger.log('Adding shift: ' + JSON.stringify(shiftData));
+    
+    // Validate required fields
+    if (!shiftData.date || !shiftData.startTime || !shiftData.endTime) {
+      throw new Error('Missing required fields: date, startTime, or endTime');
+    }
+    
     const sheet = getShiftsSheet();
     const hours = calculateHours(shiftData.date, shiftData.startTime, shiftData.endTime);
     const tipsPerHour = hours > 0 ? (shiftData.tips / hours) : 0;
     
     // Convert date string to Date object for proper storage
-    const dateObj = new Date(shiftData.date);
+    const dateObj = new Date(shiftData.date + 'T00:00:00');
     
     const rowData = [
-      shiftData.id,
+      shiftData.id || generateId(),
       dateObj,
       shiftData.startTime,
       shiftData.endTime,
       parseFloat(hours.toFixed(2)),
-      shiftData.location,
-      parseFloat(shiftData.tips),
+      shiftData.location || '',
+      parseFloat(shiftData.tips) || 0,
       parseFloat(tipsPerHour.toFixed(2)),
       shiftData.notes || '',
       new Date()
@@ -182,10 +214,11 @@ function addShift(shiftData) {
     dateRange.setNumberFormat('yyyy-mm-dd');
     
     Logger.log('Successfully added shift: ' + shiftData.id);
-    return { success: true };
+    return { success: true, id: shiftData.id };
   } catch (error) {
     Logger.log('Error adding shift: ' + error.toString());
-    throw error;
+    Logger.log('Error stack: ' + error.stack);
+    throw new Error('Failed to add shift: ' + error.message);
   }
 }
 
@@ -195,17 +228,22 @@ function addShift(shiftData) {
 function updateShift(shiftData) {
   try {
     Logger.log('Updating shift: ' + JSON.stringify(shiftData));
+    
+    if (!shiftData.id) {
+      throw new Error('Shift ID is required for updates');
+    }
+    
     const sheet = getShiftsSheet();
     const data = sheet.getDataRange().getValues();
     
     // Find the row with the matching ID
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === shiftData.id) {
+      if (String(data[i][0]) === String(shiftData.id)) {
         const hours = calculateHours(shiftData.date, shiftData.startTime, shiftData.endTime);
         const tipsPerHour = hours > 0 ? (shiftData.tips / hours) : 0;
         
         // Convert date string to Date object for proper storage
-        const dateObj = new Date(shiftData.date);
+        const dateObj = new Date(shiftData.date + 'T00:00:00');
         
         const rowData = [
           shiftData.id,
@@ -213,8 +251,8 @@ function updateShift(shiftData) {
           shiftData.startTime,
           shiftData.endTime,
           parseFloat(hours.toFixed(2)),
-          shiftData.location,
-          parseFloat(shiftData.tips),
+          shiftData.location || '',
+          parseFloat(shiftData.tips) || 0,
           parseFloat(tipsPerHour.toFixed(2)),
           shiftData.notes || '',
           data[i][9] // Keep original created date
@@ -236,10 +274,11 @@ function updateShift(shiftData) {
       }
     }
     
-    throw new Error('Shift not found');
+    throw new Error('Shift not found with ID: ' + shiftData.id);
   } catch (error) {
     Logger.log('Error updating shift: ' + error.toString());
-    throw error;
+    Logger.log('Error stack: ' + error.stack);
+    throw new Error('Failed to update shift: ' + error.message);
   }
 }
 
@@ -249,22 +288,28 @@ function updateShift(shiftData) {
 function deleteShift(shiftId) {
   try {
     Logger.log('Deleting shift: ' + shiftId);
+    
+    if (!shiftId) {
+      throw new Error('Shift ID is required for deletion');
+    }
+    
     const sheet = getShiftsSheet();
     const data = sheet.getDataRange().getValues();
     
     // Find the row with the matching ID
     for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === shiftId) {
+      if (String(data[i][0]) === String(shiftId)) {
         sheet.deleteRow(i + 1);
         Logger.log('Successfully deleted shift: ' + shiftId);
         return { success: true };
       }
     }
     
-    throw new Error('Shift not found');
+    throw new Error('Shift not found with ID: ' + shiftId);
   } catch (error) {
     Logger.log('Error deleting shift: ' + error.toString());
-    throw error;
+    Logger.log('Error stack: ' + error.stack);
+    throw new Error('Failed to delete shift: ' + error.message);
   }
 }
 
@@ -284,20 +329,27 @@ function getShiftStats() {
       };
     }
     
-    const totalTips = shifts.reduce((sum, shift) => sum + parseFloat(shift.tips), 0);
-    const totalHours = shifts.reduce((sum, shift) => sum + parseFloat(shift.hours), 0);
+    const totalTips = shifts.reduce((sum, shift) => sum + parseFloat(shift.tips || 0), 0);
+    const totalHours = shifts.reduce((sum, shift) => sum + parseFloat(shift.hours || 0), 0);
     const averageTipsPerHour = totalHours > 0 ? (totalTips / totalHours) : 0;
     
     return {
       totalShifts: shifts.length,
-      totalHours: totalHours,
-      totalTips: totalTips,
-      averageTipsPerHour: averageTipsPerHour
+      totalHours: parseFloat(totalHours.toFixed(2)),
+      totalTips: parseFloat(totalTips.toFixed(2)),
+      averageTipsPerHour: parseFloat(averageTipsPerHour.toFixed(2))
     };
   } catch (error) {
     Logger.log('Error getting stats: ' + error.toString());
-    throw error;
+    throw new Error('Failed to get statistics: ' + error.message);
   }
+}
+
+/**
+ * Generate a unique ID for new shifts
+ */
+function generateId() {
+  return 'shift_' + Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
 /**
@@ -306,7 +358,7 @@ function getShiftStats() {
 function addSampleShift() {
   try {
     const sampleShift = {
-      id: 'sample_' + new Date().getTime(),
+      id: generateId(),
       date: '2025-01-15',
       startTime: '18:00',
       endTime: '02:00',
@@ -324,7 +376,7 @@ function addSampleShift() {
 }
 
 /**
- * Test function to verify the setup
+ * Test function to verify the setup and add sample data
  */
 function testSetup() {
   try {
@@ -332,13 +384,29 @@ function testSetup() {
     Logger.log('Sheet setup successful. Sheet ID: ' + sheet.getParent().getId());
     Logger.log('Sheet URL: ' + sheet.getParent().getUrl());
     
-    // Test data operations
+    // Add a sample shift if none exist
     const shifts = getAllShifts();
     Logger.log('Current shifts count: ' + shifts.length);
     
-    return 'Setup successful';
+    if (shifts.length === 0) {
+      Logger.log('No shifts found, adding sample shift...');
+      addSampleShift();
+      Logger.log('Sample shift added');
+    }
+    
+    // Test getting shifts again
+    const updatedShifts = getAllShifts();
+    Logger.log('Updated shifts count: ' + updatedShifts.length);
+    
+    return {
+      success: true,
+      message: 'Setup successful',
+      shiftCount: updatedShifts.length,
+      spreadsheetUrl: sheet.getParent().getUrl()
+    };
   } catch (error) {
     Logger.log('Setup error: ' + error.toString());
+    Logger.log('Error stack: ' + error.stack);
     throw error;
   }
 }
